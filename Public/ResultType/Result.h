@@ -97,6 +97,12 @@ protected:
     bool bIsOk;
 };
 
+template<typename TErrorType>
+struct TErrorProxy
+{
+    TErrorType Error;
+};
+
 /**
  * A C++ implementation similar to Rust's Result<T, E> for Unreal Engine
  * Represents either a successful value (Ok) or an error (Err)
@@ -132,6 +138,25 @@ public:
        }
     }
 
+    TResult(const TSimpleResult<TValueType>& OtherSimple) : Super(OtherSimple)
+    {
+        
+    }
+    TResult(TSimpleResult<TValueType>&& OtherSimple) : Super(MoveTemp(OtherSimple))
+    {
+        
+    }
+
+    TResult(const TErrorProxy<TErrorType>& ErrorProxy) : Super(ResultHelpers::Err)
+    {
+        Error = ErrorProxy.Error;
+    }
+    
+    TResult(TErrorProxy<TErrorType>&& ErrorProxy) : Super(ResultHelpers::Err)
+    {
+        Error = MoveTemp(ErrorProxy.Error);
+    }
+
     // Assignment operators
     TResult& operator=(const TResult& Other)
     {
@@ -142,7 +167,48 @@ public:
         }
         return *this;
     }
+    
     TResult& operator=(TResult&& Other) noexcept
+    {
+        if (this != &Other)
+        {
+            this->~TResult();
+            new(this) TResult(MoveTemp(Other));
+        }
+        return *this;
+    }
+    
+    TResult& operator=(const TSimpleResult<TValueType>& Other)
+    {
+        if (this != &Other)
+        {
+            this->~TResult();
+            new(this) TResult(Other);
+        }
+        return *this;
+    }
+    
+    TResult& operator=(TSimpleResult<TValueType>&& Other) noexcept
+    {
+        if (this != &Other)
+        {
+            this->~TResult();
+            new(this) TResult(MoveTemp(Other));
+        }
+        return *this;
+    }
+
+    TResult& operator=(const TErrorProxy<TErrorType>& Other)
+    {
+        if (this != &Other)
+        {
+            this->~TResult();
+            new(this) TResult(Other);
+        }
+        return *this;
+    }
+    
+    TResult& operator=(TErrorProxy<TErrorType>&& Other) noexcept
     {
         if (this != &Other)
         {
@@ -276,4 +342,17 @@ public:
 private:
     TOptional<TErrorType> Error;
 };
+
+template<typename T>
+TSimpleResult<T> Ok(T&& Value)
+{
+    return TSimpleResult<T>(ResultHelpers::Ok, MoveTemp(Value));
+}
+
+template<typename TErrorType>
+TErrorProxy<TErrorType> Error(TErrorType&& Err)
+{
+    return TErrorProxy<TErrorType>(Err);
+}
+
 
