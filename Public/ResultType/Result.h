@@ -97,10 +97,10 @@ protected:
     bool bIsOk;
 };
 
-template<typename TErrorType>
-struct TErrorProxy
+template<typename TValueType>
+struct TValueProxy
 {
-    TErrorType Error;
+    TValueType Value;
 };
 
 /**
@@ -138,23 +138,13 @@ public:
        }
     }
 
-    TResult(const TSimpleResult<TValueType>& OtherSimple) : Super(OtherSimple)
+    TResult(TValueProxy<TValueType>&& ValueProxy) : Super(ResultHelpers::Ok, ValueProxy.Value)
     {
-        
-    }
-    TResult(TSimpleResult<TValueType>&& OtherSimple) : Super(MoveTemp(OtherSimple))
-    {
-        
-    }
-
-    TResult(const TErrorProxy<TErrorType>& ErrorProxy) : Super(ResultHelpers::Err)
-    {
-        Error = ErrorProxy.Error;
     }
     
-    TResult(TErrorProxy<TErrorType>&& ErrorProxy) : Super(ResultHelpers::Err)
+    TResult(TValueProxy<TErrorType>&& ErrorProxy) : Super(ResultHelpers::Err)
     {
-        Error = MoveTemp(ErrorProxy.Error);
+        Error = MoveTemp(ErrorProxy.Value);
     }
 
     // Assignment operators
@@ -177,18 +167,8 @@ public:
         }
         return *this;
     }
-    
-    TResult& operator=(const TSimpleResult<TValueType>& Other)
-    {
-        if (this != &Other)
-        {
-            this->~TResult();
-            new(this) TResult(Other);
-        }
-        return *this;
-    }
-    
-    TResult& operator=(TSimpleResult<TValueType>&& Other) noexcept
+
+    TResult& operator=(TValueProxy<TValueType>&& Other)
     {
         if (this != &Other)
         {
@@ -197,18 +177,8 @@ public:
         }
         return *this;
     }
-
-    TResult& operator=(const TErrorProxy<TErrorType>& Other)
-    {
-        if (this != &Other)
-        {
-            this->~TResult();
-            new(this) TResult(Other);
-        }
-        return *this;
-    }
     
-    TResult& operator=(TErrorProxy<TErrorType>&& Other) noexcept
+    TResult& operator=(TValueProxy<TErrorType>&& Other) noexcept
     {
         if (this != &Other)
         {
@@ -344,15 +314,15 @@ private:
 };
 
 template<typename T>
-TSimpleResult<T> Ok(T&& Value)
+TValueProxy<T> Ok(T&& Value)
 {
-    return TSimpleResult<T>(ResultHelpers::Ok, MoveTemp(Value));
+    return TValueProxy<T>(Value);
 }
 
 template<typename TErrorType>
-TErrorProxy<TErrorType> Error(TErrorType&& Err)
+TValueProxy<TErrorType> Error(TErrorType&& Err)
 {
-    return TErrorProxy<TErrorType>(Err);
+    return TValueProxy<TErrorType>(Err);
 }
 
 
