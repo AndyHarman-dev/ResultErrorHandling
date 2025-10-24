@@ -21,130 +21,142 @@ namespace ResultHelpers
     
     constexpr OkTag Ok{};
     constexpr ErrTag Err{};
+
+    template<typename T, typename E>
+    struct FOkOrErrValue
+    {
+        FOkOrErrValue() = default;
+        
+        FOkOrErrValue(OkTag, const T& Value)
+        {
+            SetOkValue(Value);
+        }
+        
+        FOkOrErrValue(OkTag, T&& Value)
+        {
+            SetOkValue(MoveTemp(Value));
+        }
+
+        FOkOrErrValue(ErrTag, const E& Error)
+        {
+            SetErrValue(Error);
+        }
+
+        FOkOrErrValue(ErrTag, E&& Error)
+        {
+            SetErrValue(MoveTemp(Error));
+        }
+        
+        T& GetOkValue()
+        {
+            return OKValue;
+        }
+
+        E& GetErrValue()
+        {
+            return ERRValue;
+        }
+
+        const T& GetOkValue() const
+        {
+            return OKValue;
+        }
+
+        const E& GetErrValue() const
+        {
+            return ERRValue;
+        }
+
+        void SetOkValue(const T& Value)
+        {
+            OKValue = Value;
+        }
+
+        void SetOkValue(T&& Value)
+        {
+            OKValue = MoveTemp(Value);
+        }
+
+        void SetErrValue(const E& Err)
+        {
+            ERRValue = Err;
+        }
+
+        void SetErrValue(E&& Err)
+        {
+            ERRValue = MoveTemp(Err);
+        }
+
+        void ResetOk()
+        {
+            OKValue = T();
+        }
+
+        void ResetErr()
+        {
+            ERRValue = E();
+        }
+
+    private:
+
+        T OKValue;
+        E ERRValue;
+    };
 }
-
-template<typename TValueType>
-class TSimpleResult
-{
-public:
-    TSimpleResult(const ResultHelpers::OkTag&, const TValueType& Value) : Value(Value), bIsOk(true) {}
-    TSimpleResult(const ResultHelpers::OkTag&, TValueType&& Value) : Value(MoveTemp(Value)), bIsOk(true) {}
-    TSimpleResult(const ResultHelpers::ErrTag&) : bIsOk(false){}
-    TSimpleResult(const TSimpleResult& Other)
-    {
-        Value = Other.Value;
-        bIsOk = Other.bIsOk;
-    }
-    TSimpleResult(TSimpleResult&& Other)
-    {
-        Value = Other.Value;
-        bIsOk = Other.bIsOk;
-        Other.bIsOk = false;
-        Other.Value.Reset();
-    }
-    
-    TSimpleResult& operator=(const TSimpleResult& Other)
-    {
-        if (this != &Other)
-        {
-            this->~TResult();
-            new(this) TResult(Other);
-        }
-        return *this;
-    }
-    
-    TSimpleResult& operator=(TSimpleResult&& Other)
-    {
-        if (this != &Other)
-        {
-            this->~TResult();
-            new(this) TResult(MoveTemp(Other));
-        }
-        return *this;
-    }
-
-    bool IsOk() const { return bIsOk; }
-    bool IsErr() const { return !bIsOk; }
-    template<typename Predicate>
-    bool IsOkAnd(Predicate&& Pred) const
-    {
-        return bIsOk && Pred(Value.GetValue());
-    }
-    
-    const TValueType& Expect(const TCHAR* Message) const
-    {
-        if (!IsOk())
-        {
-            UE_LOG(LogTemp, Fatal, TEXT("Result::Expect failed: %s"), Message);
-        }
-        return Value.GetValue();
-    }
-
-    const TValueType& Unwrap() const
-    {
-        if (!bIsOk)
-        {
-            UE_LOG(LogTemp, Fatal, TEXT("Called Unwrap on an Err Result"));
-        }
-        return Value.GetValue();
-    }
-    TValueType UnwrapOr(const TValueType& DefaultValue) const
-    {
-        return Value.Get(DefaultValue);
-    }
-protected:
-    TOptional<TValueType> Value;
-    bool bIsOk;
-};
-
-template<typename TValueType>
-struct TValueProxy
-{
-    TValueType Value;
-};
 
 /**
  * A C++ implementation similar to Rust's Result<T, E> for Unreal Engine
  * Represents either a successful value (Ok) or an error (Err)
  */
-template<typename TValueType, typename TErrorType>
-class TResult : public TSimpleResult<TValueType>
+template<typename T, typename E>
+class RESULTERRORHANDLINGTYPE_API TResult
 {
-    using Super = TSimpleResult<TValueType>;
+private:
+    bool bIsOk;
+
+    ResultHelpers::FOkOrErrValue<T, E> OkOrErrValue;
+
+#define OK_VALUE OkOrErrValue.GetOkValue()
+#define ERR_VALUE OkOrErrValue.GetErrValue()
+
 public:
-    using ValueType = TValueType;
-    using ErrorType = TErrorType;
 
-    using Super::IsOk;
-    using Super::Value;
+    using OkValueType = T;
+    using ErrValueType = E;
+    
+    // Constructors
+    TResult(const ResultHelpers::OkTag& InTag, const T& Value) : bIsOk(true), OkOrErrValue(InTag, Value) {}
+    TResult(const ResultHelpers::OkTag& InTag, T&& Value) : bIsOk(true), OkOrErrValue(InTag, MoveTemp(Value)) {}
+    
+    TResult(const ResultHelpers::ErrTag& InTag, const E& Error) : bIsOk(false), OkOrErrValue(InTag, Error) {}
+    TResult(const ResultHelpers::ErrTag& InTag, E&& Error) : bIsOk(false), OkOrErrValue(InTag, MoveTemp(Error)) {}
 
-    TResult(const ResultHelpers::OkTag&, const TValueType& Value) : Super(ResultHelpers::Ok, Value) {}
-    TResult(const ResultHelpers::OkTag&, TValueType&& Value) : Super(ResultHelpers::Ok, MoveTemp(Value)) {}
-    TResult(const ResultHelpers::ErrTag&, const TErrorType& Error) : Super(ResultHelpers::Err), Error(Error) {}
-    TResult(const ResultHelpers::ErrTag&, TErrorType&& Error) : Super(ResultHelpers::Err), Error(MoveTemp(Error)) {}
-    TResult(const TResult& Other) : Super(Other)
+    // Copy constructor
+    TResult(const TResult& Other) : bIsOk(Other.bIsOk)
     {
-        if (Other.IsErr())
+        if (bIsOk)
         {
-            Error = Other.Error;
+            OkOrErrValue.SetOkValue(Other.OkOrErrValue.GetOkValue());
+        }
+        else
+        {
+            OkOrErrValue.SetErrValue(Other.OkOrErrValue.GetErrValue());
         }
     }
-    TResult(TResult&& Other) : Super(Other)
-    {
-       if (Other.IsErr())
-       {
-           Error = MoveTemp(Other.Error);
-           Other.Error.Reset();
-       }
-    }
 
-    TResult(TValueProxy<TValueType>&& ValueProxy) : Super(ResultHelpers::Ok, ValueProxy.Value)
+    // Move constructor
+    TResult(TResult&& Other) noexcept : bIsOk(Other.bIsOk)
     {
-    }
-    
-    TResult(TValueProxy<TErrorType>&& ErrorProxy) : Super(ResultHelpers::Err)
-    {
-        Error = MoveTemp(ErrorProxy.Value);
+        if (bIsOk)
+        {
+            OkOrErrValue.SetOkValue(Other.OkOrErrValue.GetOkValue());
+            Other.OkOrErrValue.ResetOk();
+        }
+        else
+        {
+            OkOrErrValue.SetErrValue(Other.OkOrErrValue.GetErrValue());
+            Other.OkOrErrValue.ResetErr();
+        }
     }
 
     // Assignment operators
@@ -157,7 +169,7 @@ public:
         }
         return *this;
     }
-    
+
     TResult& operator=(TResult&& Other) noexcept
     {
         if (this != &Other)
@@ -168,161 +180,203 @@ public:
         return *this;
     }
 
-    TResult& operator=(TValueProxy<TValueType>&& Other)
+    // Querying the variant
+    bool IsOk() const { return bIsOk; }
+    bool IsErr() const { return !bIsOk; }
+
+    template<typename Predicate>
+    bool IsOkAnd(Predicate&& Pred) const
     {
-        if (this != &Other)
-        {
-            this->~TResult();
-            new(this) TResult(MoveTemp(Other));
-        }
-        return *this;
-    }
-    
-    TResult& operator=(TValueProxy<TErrorType>&& Other) noexcept
-    {
-        if (this != &Other)
-        {
-            this->~TResult();
-            new(this) TResult(MoveTemp(Other));
-        }
-        return *this;
+        return bIsOk && Pred(OK_VALUE);
     }
 
     template<typename Predicate>
     bool IsErrAnd(Predicate&& Pred) const
     {
-        return !IsOk() && Pred(Error.GetValue());
+        return !bIsOk && Pred(ERR_VALUE);
     }
 
-    const TErrorType& UnwrapErr() const
+    // Extracting contained values
+    const T& Expect(const TCHAR* Message) const
     {
-        if (IsOk())
+        if (!bIsOk)
         {
-            UE_LOG(LogTemp, Fatal, TEXT("Called UnwrapErr on an Ok Result"));
+            UE_LOG(LogTemp, Fatal, TEXT("Result::Expect failed: %s"), Message);
         }
-        return Error.GetValue();
+        return OK_VALUE;
     }
-    template<typename TFunctor>
-    TValueType UnwrapOrElse(TFunctor&& Func) const
+
+    const T& Unwrap() const
     {
-        return IsOk() ? Value.GetValue() : Func(Error.GetValue());
+        if (!bIsOk)
+        {
+            UE_LOG(LogTemp, Fatal, TEXT("Called Unwrap on an Err Result"));
+        }
+        return OK_VALUE;
     }
-    
-    const TErrorType& ExpectErr(const TCHAR* Message) const
+
+    T UnwrapOr(const T& DefaultValue) const
     {
-        if (IsOk())
+        return bIsOk ? OK_VALUE : DefaultValue;
+    }
+
+    template<typename F>
+    T UnwrapOrElse(F&& Func) const
+    {
+        return bIsOk ? OK_VALUE : Func(ERR_VALUE);
+    }
+
+    const E& ExpectErr(const TCHAR* Message) const
+    {
+        if (bIsOk)
         {
             UE_LOG(LogTemp, Fatal, TEXT("Result::ExpectErr failed: %s"), Message);
         }
-        return Error.GetValue();
+        return ERR_VALUE;
     }
 
-    template<typename TFunctor>
-    TResult<TInvokeResult_T<TFunctor, TValueType>, TErrorType> Map(TFunctor&& Func) const
+    const E& UnwrapErr() const
     {
-        if (IsOk())
+        if (bIsOk)
         {
-            return TResult<TInvokeResult_T<TFunctor, TValueType>, TErrorType>(ResultHelpers::Ok, Func(Value.GetValue()));
+            UE_LOG(LogTemp, Fatal, TEXT("Called UnwrapErr on an Ok Result"));
+        }
+        return ERR_VALUE;
+    }
+
+    // Transforming contained values
+    template<typename F>
+    TResult<TInvokeResult_T<F, T>, E> Map(F&& Func) const
+    {
+        if (bIsOk)
+        {
+            return TResult<TInvokeResult_T<F, T>, E>(ResultHelpers::Ok, Func(OK_VALUE));
         }
         else
         {
-            return TResult<TInvokeResult_T<TFunctor, TValueType>, TErrorType>(ResultHelpers::Err, Error.GetValue());
+            return TResult<TInvokeResult_T<F, T>, E>(ResultHelpers::Err, ERR_VALUE);
         }
     }
 
-    template<typename TFunctor>
-    TResult<TValueType, TInvokeResult_T<TFunctor, TErrorType>> MapErr(TFunctor&& Func) const
+    template<typename F>
+    TResult<T, TInvokeResult_T<F, E>> MapErr(F&& Func) const
     {
-        if (IsOk())
+        if (bIsOk)
         {
-            return TResult<TValueType, TInvokeResult_T<TFunctor, TErrorType>>(ResultHelpers::Ok, Value.GetValue());
+            return TResult<T, TInvokeResult_T<F, E>>(ResultHelpers::Ok, OK_VALUE);
         }
         else
         {
-            return TResult<TValueType, TInvokeResult_T<TFunctor, TErrorType>>(ResultHelpers::Err, Func(Error.GetValue()));
+            return TResult<T, TInvokeResult_T<F, E>>(ResultHelpers::Err, Func(ERR_VALUE));
         }
     }
 
-    template<typename TFunctor>
-    TResult<typename TInvokeResult_T<TFunctor, TValueType>::ValueType, TErrorType> AndThen(TFunctor&& Func) const
+    template<typename F>
+    TResult<typename TInvokeResult_T<F, T>::OkValueType, E> AndThen(F&& Func) const
     {
-        if (IsOk())
+        if (bIsOk)
         {
-            return Func(Value.GetValue());
+            return Func(OK_VALUE);
         }
         else
         {
-            return TResult<typename TInvokeResult_T<TFunctor, TValueType>::ValueType, TErrorType>(ResultHelpers::Err, Error.GetValue());
+            return TResult<typename TInvokeResult_T<F, T>::OkValueType, E>(ResultHelpers::Err, ERR_VALUE);
         }
     }
 
-    template<typename TFunctor>
-    TResult<TValueType, typename TInvokeResult_T<TFunctor, TErrorType>::ErrorType> OrElse(TFunctor&& Func) const
+    template<typename F>
+    TResult<T, typename TInvokeResult_T<F, E>::ErrValueType> OrElse(F&& Func) const
     {
-        if (IsOk())
+        if (bIsOk)
         {
-            return TResult<TValueType, typename TInvokeResult_T<TFunctor, TErrorType>::ErrorType>(ResultHelpers::Ok, Value.GetValue());
+            return TResult<T, typename TInvokeResult_T<F, E>::ErrValueType>(ResultHelpers::Ok, OK_VALUE);
         }
         else
         {
-            return Func(Error.GetValue());
+            return Func(ERR_VALUE);
         }
     }
 
-    template<typename TOtherValue>
-    TResult<TOtherValue, TErrorType> And(const TResult<TOtherValue, TErrorType>& Other) const
+    // Convert to Optional
+    TOptional<T> Ok() const
     {
-        return IsOk() ? Other : TResult<TOtherValue, TErrorType>(ResultHelpers::Err, Error.GetValue());
+        return bIsOk ? TOptional<T>(OK_VALUE) : TOptional<T>();
     }
+
+    TOptional<E> Err() const
+    {
+        return !bIsOk ? TOptional<E>(ERR_VALUE) : TOptional<E>();
+    }
+
+    // Boolean operators
+    template<typename U>
+    TResult<U, E> And(const TResult<U, E>& Other) const
+    {
+        return bIsOk ? Other : TResult<U, E>(ResultHelpers::Err, ERR_VALUE);
+    }
+
     template<typename NewE>
-    TResult<TValueType, NewE> Or(const TResult<TValueType, NewE>& Other) const
+    TResult<T, NewE> Or(const TResult<T, NewE>& Other) const
     {
-        return IsOk() ? TResult<TValueType, NewE>(ResultHelpers::Ok, Value.GetValue()) : Other;
+        return bIsOk ? TResult<T, NewE>(ResultHelpers::Ok, OK_VALUE) : Other;
     }
 
-    template<typename TFunctor>
-    const TResult& Inspect(TFunctor&& Func) const
+    // Inspection (for debugging/logging)
+    template<typename F>
+    const TResult& Inspect(F&& Func) const
     {
-        if (IsOk())
+        if (bIsOk)
         {
-            Func(Value.GetValue());
-        }
-        return *this;
-    }
-    template<typename TFunctor>
-    const TResult& InspectErr(TFunctor&& Func) const
-    {
-        if (!IsOk())
-        {
-            Func(Error.GetValue());
+            Func(OK_VALUE);
         }
         return *this;
     }
 
+    template<typename F>
+    const TResult& InspectErr(F&& Func) const
+    {
+        if (!bIsOk)
+        {
+            Func(ERR_VALUE);
+        }
+        return *this;
+    }
+
+    // Comparison operators
     bool operator==(const TResult& Other) const
     {
-        if (IsOk() != Other.IsOk()) return false;
-        return IsOk() ? (Value == Other.Value) : (Error == Other.Error);
+        if (bIsOk != Other.bIsOk) return false;
+        return bIsOk ? (OK_VALUE == Other.OK_VALUE) : (ERR_VALUE == Other.ERR_VALUE);
     }
+
     bool operator!=(const TResult& Other) const
     {
         return !(*this == Other);
     }
-
-private:
-    TOptional<TErrorType> Error;
 };
 
+// Helper functions for creating Results
 template<typename T>
-TValueProxy<T> Ok(T&& Value)
+auto MakeOk(T&& Value)
 {
-    return TValueProxy<T>(Value);
+    
+    return [v = Forward<T>(Value)](auto ErrorType) mutable
+    {
+        using E = decltype(ErrorType);
+        return TResult<T, E>(ResultHelpers::Ok, MoveTemp(v));
+    };
 }
 
-template<typename TErrorType>
-TValueProxy<TErrorType> Error(TErrorType&& Err)
+template<typename E>
+auto MakeErr(E&& Error)
 {
-    return TValueProxy<TErrorType>(Err);
+    return [e = Forward<E>(Error)](auto OkType) mutable
+    {
+        using T = decltype(OkType);
+        return TResult<T, E>(ResultHelpers::Err, MoveTemp(e));
+    };
 }
 
+#undef OK_VALUE
+#undef ERR_VALUE
 
